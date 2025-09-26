@@ -35,6 +35,5 @@
 
 ## Active Learning & Review Loop
 - Tune `MODEL_CONFIG["active_learning"]` thresholds to balance reviewer load vs. precision.
-- Call `active_learning.select_for_review` on prediction dicts to stage low-confidence cases before Label Studio.
+- Call `review_queue.py`（或直接使用 `active_learning.select_for_review`）生成 `processed_data/review_queue.json`，在 Label Studio 中批量导入。
 - Use stored `clip_results` for the full probability vector when auditing gear-shifter edge cases.
-

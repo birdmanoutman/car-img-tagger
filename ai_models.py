@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -75,7 +76,7 @@ class CarImageTagger:
             return {}
 
         predictions: Dict[str, Dict[str, float]] = {}
-        self.category_uncertainties: Dict[str, Dict[str, float]] = {}
+        self.category_uncertainties = {}
 
         for category, prompts in self.car_prompts.items():
             probabilities = self.vl_model.predict_probabilities(image, prompts)
@@ -224,6 +225,14 @@ class CarImageTagger:
         angle_unc = self.category_uncertainties.get("angles", {})
         review_required = self._needs_review(angle_unc)
 
+        category_uncertainties = {
+            key: value.copy() if isinstance(value, dict) else value
+            for key, value in self.category_uncertainties.items()
+        }
+        confidence_terms = [angle_confidence, brand_confidence, style_confidence, interior_confidence]
+        scores = [score for score in confidence_terms if score > 0]
+        mean_confidence = float(np.mean(scores)) if scores else 0.0
+
         result = {
             "image_path": str(image_path),
             "image_id": f"auto_{Path(image_path).stem}",
@@ -242,9 +251,9 @@ class CarImageTagger:
             "needs_annotation": review_required,
             "auto_tags": auto_tags,
             "manual_tags": [],
-            "confidence": float(np.mean([angle_confidence, brand_confidence, style_confidence])),
+            "confidence": mean_confidence,
             "clip_results": clip_results,
-            "uncertainty": self.category_uncertainties,
+            "uncertainty": category_uncertainties,
         }
         return result
 
@@ -290,6 +299,16 @@ class CarImageTagger:
                 print(f"  ✅ {brand}: 处理了 {len(brand_results)} 张图片")
 
         df = pd.DataFrame(all_results)
+        if not df.empty:
+            def _to_json_serializable(value):
+                if isinstance(value, (dict, list)):
+                    return json.dumps(value, ensure_ascii=False)
+                return value
+
+            for column in ["clip_results", "uncertainty", "auto_tags", "manual_tags"]:
+                if column in df.columns:
+                    df[column] = df[column].apply(_to_json_serializable)
+
         output_path = DATA_CONFIG["processed_data"] / "auto_annotated_dataset.csv"
         df.to_csv(output_path, index=False, encoding="utf-8")
         print(f"✅ 自动标注数据集已保存: {len(df)} 条记录")
