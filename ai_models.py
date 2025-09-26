@@ -1,38 +1,35 @@
-"""
-AI模型模块 - 使用CLIP、YOLO等模型进行汽车图片智能标注
-"""
-import torch
-import clip
-import cv2
-import numpy as np
-from PIL import Image
-from pathlib import Path
-from typing import List, Dict, Tuple, Optional
-import json
-from tqdm import tqdm
-import pandas as pd
+"""AI模型模块：负责视觉语言打标与主动学习队列。"""
+from __future__ import annotations
 
-from config import MODEL_CONFIG, LABEL_CONFIG, DATA_CONFIG
+import argparse
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+import torch
+from PIL import Image
+from tqdm import tqdm
+
+from active_learning import compute_uncertainty
+from config import DATA_CONFIG, LABEL_CONFIG, MODEL_CONFIG
+from models.vision_language import VisionLanguageConfig, VisionLanguageModel
+from deployment_utils import build_tensorrt_engine, export_onnx
+
 
 class CarImageTagger:
-    def __init__(self):
+    def __init__(self) -> None:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"🔧 使用设备: {self.device}")
-        
-        # 初始化CLIP模型
-        self.clip_model, self.clip_preprocess = self._load_clip_model()
-        
-        # 定义汽车相关的文本提示
+
+        self.active_learning_cfg = MODEL_CONFIG.get("active_learning", {})
+        self.vision_language_cfg = VisionLanguageConfig(**MODEL_CONFIG.get("vision_language", {}))
+        self.vl_model = VisionLanguageModel(self.vision_language_cfg, device=self.device)
+
         self.car_prompts = self._create_car_prompts()
-        
-    def _load_clip_model(self):
-        """加载CLIP模型"""
-        print("📥 加载CLIP模型...")
-        model, preprocess = clip.load(MODEL_CONFIG["clip"]["model_name"], device=self.device)
-        return model, preprocess
-    
+        self.category_uncertainties: Dict[str, Dict[str, float]] = {}
+
     def _create_car_prompts(self) -> Dict[str, List[str]]:
-        """创建汽车相关的文本提示"""
         prompts = {
             "angles": [
                 "front view of a car", "rear view of a car", "side view of a car",
@@ -41,75 +38,73 @@ class CarImageTagger:
                 "car headlights", "car taillights", "car grille", "car wheels",
                 "car spoiler", "car console", "car door panel", "car sunroof",
                 "car trunk", "car front trunk", "car air vents", "car instrument panel",
-                "car diffuser", "car C-pillar", "car charging port"
+                "car diffuser", "car C-pillar", "car charging port",
             ],
             "brands": [
-                "Cadillac car", "Ferrari car", "Honda car", "MINI car", 
-                "Nissan car", "Porsche car", "Smart car", "Toyota car"
+                "Cadillac car", "Ferrari car", "Honda car", "MINI car",
+                "Nissan car", "Porsche car", "Smart car", "Toyota car",
             ],
             "styles": [
-                "electric car", "hybrid car", "sports car", "luxury car", 
+                "electric car", "hybrid car", "sports car", "luxury car",
                 "concept car", "vintage car", "modern car", "classic car",
                 "business car", "family car", "off-road car", "racing car",
-                "SUV car", "sedan car", "hatchback car", "convertible car"
+                "SUV car", "sedan car", "hatchback car", "convertible car",
             ],
             "colors": [
                 "black car", "white car", "silver car", "gray car", "red car",
                 "blue car", "green car", "yellow car", "orange car", "purple car",
-                "brown car", "gold car", "champagne car", "pearl white car"
-            ]
+                "brown car", "gold car", "champagne car", "pearl white car",
+            ],
+            "interior_parts": [
+                "close up of a car gear shifter", "car gear knob detail", "luxury car gear lever",
+                "close up of car steering wheel controls", "car drive mode dial", "close up of car seat stitching",
+                "close up of car door trim", "car climate control vent detail",
+            ],
         }
         return prompts
-    
-    def classify_with_clip(self, image_path: str) -> Dict[str, float]:
-        """使用CLIP对图片进行分类"""
+
+    def classify_with_clip(self, image_path: str) -> Dict[str, Dict[str, float]]:
+        """Backward-compatible API name; now delegates to the vision-language backbone."""
+        return self.classify_with_model(image_path)
+
+    def classify_with_model(self, image_path: str) -> Dict[str, Dict[str, float]]:
         try:
-            # 加载和预处理图片
-            image = Image.open(image_path).convert('RGB')
-            image_input = self.clip_preprocess(image).unsqueeze(0).to(self.device)
-            
-            results = {}
-            
-            # 对每个类别进行分类
-            for category, prompts in self.car_prompts.items():
-                # 准备文本输入
-                text_inputs = clip.tokenize(prompts).to(self.device)
-                
-                # 计算相似度
-                with torch.no_grad():
-                    image_features = self.clip_model.encode_image(image_input)
-                    text_features = self.clip_model.encode_text(text_inputs)
-                    
-                    # 计算余弦相似度
-                    similarity = (100.0 * image_features @ text_features.T).softmax(dim=-1)
-                    
-                    # 获取最高分的结果
-                    values, indices = similarity[0].topk(3)
-                    
-                    # 保存结果
-                    category_results = {}
-                    for i, (value, idx) in enumerate(zip(values, indices)):
-                        category_results[prompts[idx]] = float(value)
-                    
-                    results[category] = category_results
-            
-            return results
-            
-        except Exception as e:
-            print(f"❌ CLIP分类失败: {image_path}, 错误: {e}")
+            image = Image.open(image_path).convert("RGB")
+        except Exception as exc:  # pragma: no cover - IO guard
+            print(f"❌ 无法打开图片: {image_path}, 错误: {exc}")
             return {}
-    
+
+        predictions: Dict[str, Dict[str, float]] = {}
+        self.category_uncertainties: Dict[str, Dict[str, float]] = {}
+
+        for category, prompts in self.car_prompts.items():
+            probabilities = self.vl_model.predict_probabilities(image, prompts)
+            probabilities_np = probabilities.detach().cpu().numpy().astype(float)
+            scores = {prompt: float(probabilities_np[idx]) for idx, prompt in enumerate(prompts)}
+
+            top_k = min(3, len(prompts))
+            top_indices = np.argsort(probabilities_np)[::-1][:top_k]
+            top_results = {prompts[idx]: float(probabilities_np[idx]) for idx in top_indices}
+            predictions[category] = dict(sorted(top_results.items(), key=lambda item: item[1], reverse=True))
+
+            unc = compute_uncertainty(probabilities_np)
+            self.category_uncertainties[category] = {
+                "entropy": unc.entropy,
+                "margin": unc.margin,
+                "max_confidence": unc.max_confidence,
+            }
+
+            predictions[f"{category}_full"] = scores
+
+        return predictions
+
     def extract_angle_from_clip(self, clip_results: Dict) -> Tuple[str, float]:
-        """从CLIP结果中提取角度信息"""
         if "angles" not in clip_results:
             return "Unknown", 0.0
-        
-        angle_scores = clip_results["angles"]
-        
-        # 角度映射
+
         angle_mapping = {
             "front view of a car": "4-正前",
-            "rear view of a car": "5-正后", 
+            "rear view of a car": "5-正后",
             "side view of a car": "2-正侧",
             "45 degree front angle of a car": "1-前45",
             "45 degree rear angle of a car": "3-后45",
@@ -131,56 +126,39 @@ class CarImageTagger:
             "car instrument panel": "21-仪表屏",
             "car diffuser": "22-扩散器",
             "car C-pillar": "23-C柱",
-            "car charging port": "24-充电口"
+            "car charging port": "24-充电口",
         }
-        
-        best_angle = "Unknown"
-        best_score = 0.0
-        
-        for prompt, score in angle_scores.items():
-            if prompt in angle_mapping and score > best_score:
-                best_angle = angle_mapping[prompt]
-                best_score = score
-        
-        return best_angle, best_score
-    
+
+        angle_scores = clip_results.get("angles_full", {})
+        best_prompt = max(angle_scores, key=angle_scores.get, default=None)
+        if best_prompt is None:
+            return "Unknown", 0.0
+        return angle_mapping.get(best_prompt, "Unknown"), float(angle_scores.get(best_prompt, 0.0))
+
     def extract_brand_from_clip(self, clip_results: Dict) -> Tuple[str, float]:
-        """从CLIP结果中提取品牌信息"""
         if "brands" not in clip_results:
             return "Unknown", 0.0
-        
-        brand_scores = clip_results["brands"]
-        
-        # 品牌映射
+
         brand_mapping = {
             "Cadillac car": "Cadillac",
-            "Ferrari car": "Ferrari", 
+            "Ferrari car": "Ferrari",
             "Honda car": "Honda",
             "MINI car": "MINI",
             "Nissan car": "Nissan",
             "Porsche car": "Porsche",
             "Smart car": "Smart",
-            "Toyota car": "Toyota"
+            "Toyota car": "Toyota",
         }
-        
-        best_brand = "Unknown"
-        best_score = 0.0
-        
-        for prompt, score in brand_scores.items():
-            if prompt in brand_mapping and score > best_score:
-                best_brand = brand_mapping[prompt]
-                best_score = score
-        
-        return best_brand, best_score
-    
+        brand_scores = clip_results.get("brands_full", {})
+        best_prompt = max(brand_scores, key=brand_scores.get, default=None)
+        if best_prompt is None:
+            return "Unknown", 0.0
+        return brand_mapping.get(best_prompt, "Unknown"), float(brand_scores.get(best_prompt, 0.0))
+
     def extract_style_from_clip(self, clip_results: Dict) -> Tuple[str, float]:
-        """从CLIP结果中提取风格信息"""
         if "styles" not in clip_results:
             return "Unknown", 0.0
-        
-        style_scores = clip_results["styles"]
-        
-        # 风格映射
+
         style_mapping = {
             "electric car": "新能源",
             "hybrid car": "新能源",
@@ -197,40 +175,55 @@ class CarImageTagger:
             "SUV car": "SUV",
             "sedan car": "轿车",
             "hatchback car": "掀背车",
-            "convertible car": "敞篷车"
+            "convertible car": "敞篷车",
         }
-        
-        best_style = "Unknown"
-        best_score = 0.0
-        
-        for prompt, score in style_scores.items():
-            if prompt in style_mapping and score > best_score:
-                best_style = style_mapping[prompt]
-                best_score = score
-        
-        return best_style, best_score
-    
+        style_scores = clip_results.get("styles_full", {})
+        best_prompt = max(style_scores, key=style_scores.get, default=None)
+        if best_prompt is None:
+            return "Unknown", 0.0
+        return style_mapping.get(best_prompt, "Unknown"), float(style_scores.get(best_prompt, 0.0))
+
+    def extract_interior_from_results(self, clip_results: Dict) -> Tuple[str, float]:
+        if "interior_parts" not in clip_results:
+            return "Unknown", 0.0
+        interior_mapping = {
+            "close up of a car gear shifter": "16-球头",
+            "car gear knob detail": "16-球头",
+            "luxury car gear lever": "16-旋钮",
+            "close up of car steering wheel controls": "11-方向盘",
+            "car drive mode dial": "16-旋钮",
+            "close up of car seat stitching": "14-座椅",
+            "close up of car door trim": "15-门板",
+            "car climate control vent detail": "20-出风口",
+        }
+        part_scores = clip_results.get("interior_parts_full", {})
+        best_prompt = max(part_scores, key=part_scores.get, default=None)
+        if best_prompt is None:
+            return "Unknown", 0.0
+        return interior_mapping.get(best_prompt, "Unknown"), float(part_scores.get(best_prompt, 0.0))
+
     def process_single_image(self, image_path: str) -> Dict:
-        """处理单张图片，返回完整的标注信息"""
         print(f"🔍 处理图片: {Path(image_path).name}")
-        
-        # 使用CLIP进行分类
-        clip_results = self.classify_with_clip(image_path)
-        
-        # 提取各种信息
+
+        clip_results = self.classify_with_model(image_path)
+
         angle, angle_confidence = self.extract_angle_from_clip(clip_results)
         brand, brand_confidence = self.extract_brand_from_clip(clip_results)
         style, style_confidence = self.extract_style_from_clip(clip_results)
-        
-        # 获取图片基本信息
+        interior, interior_confidence = self.extract_interior_from_results(clip_results)
+
         try:
             img = Image.open(image_path)
             width, height = img.size
             file_size = Path(image_path).stat().st_size
-        except:
-            width, height, file_size = 0, 0, 0
-        
-        # 构建结果
+        except Exception:  # pragma: no cover - IO guard
+            width = height = file_size = 0
+
+        auto_tags = [tag for tag in [angle, brand, style, interior] if tag and tag != "Unknown"]
+
+        angle_unc = self.category_uncertainties.get("angles", {})
+        review_required = self._needs_review(angle_unc)
+
         result = {
             "image_path": str(image_path),
             "image_id": f"auto_{Path(image_path).stem}",
@@ -241,84 +234,125 @@ class CarImageTagger:
             "angle_confidence": angle_confidence,
             "style": style,
             "style_confidence": style_confidence,
+            "interior_part": interior,
+            "interior_confidence": interior_confidence,
             "width": width,
             "height": height,
             "file_size": file_size,
-            "needs_annotation": True,
-            "auto_tags": [angle, brand, style],
+            "needs_annotation": review_required,
+            "auto_tags": auto_tags,
             "manual_tags": [],
-            "confidence": (angle_confidence + brand_confidence + style_confidence) / 3,
-            "clip_results": clip_results
+            "confidence": float(np.mean([angle_confidence, brand_confidence, style_confidence])),
+            "clip_results": clip_results,
+            "uncertainty": self.category_uncertainties,
         }
-        
         return result
-    
+
+    def _needs_review(self, metrics: Dict[str, float]) -> bool:
+        entropy_threshold = self.active_learning_cfg.get("entropy_threshold", 1.1)
+        margin_threshold = self.active_learning_cfg.get("margin_threshold", 0.25)
+        entropy = metrics.get("entropy", 0.0)
+        margin = metrics.get("margin", 1.0)
+        return entropy >= entropy_threshold or margin <= margin_threshold
+
     def process_brand_images(self, brand_path: Path, max_images: int = 100) -> List[Dict]:
-        """处理某个品牌的所有图片"""
         print(f"🚗 处理品牌图片: {brand_path.name}")
-        
-        # 获取所有图片文件
-        image_files = []
-        for ext in ['*.jpg', '*.jpeg', '*.png']:
-            image_files.extend(list(brand_path.rglob(ext)))
-        
-        # 限制处理数量
+
+        image_files: List[Path] = []
+        for ext in ["*.jpg", "*.jpeg", "*.png"]:
+            image_files.extend(brand_path.rglob(ext))
+
         if max_images and len(image_files) > max_images:
             image_files = image_files[:max_images]
             print(f"  📊 限制处理数量: {max_images} 张")
-        
+
         results = []
         for img_path in tqdm(image_files, desc=f"处理 {brand_path.name}"):
             try:
                 result = self.process_single_image(str(img_path))
                 results.append(result)
-            except Exception as e:
-                print(f"❌ 处理失败: {img_path}, 错误: {e}")
-        
+            except Exception as exc:  # pragma: no cover - runtime guard
+                print(f"❌ 处理失败: {img_path}, 错误: {exc}")
+
         return results
-    
+
     def process_all_brands(self, max_images_per_brand: int = 50) -> pd.DataFrame:
-        """处理所有品牌的图片"""
         print("🚀 开始处理所有品牌图片...")
-        
+
         all_results = []
         brand_images_path = DATA_CONFIG["brand_images"]
-        
+
         for brand in LABEL_CONFIG["brands"]:
             brand_path = brand_images_path / brand
             if brand_path.exists():
                 brand_results = self.process_brand_images(brand_path, max_images_per_brand)
                 all_results.extend(brand_results)
                 print(f"  ✅ {brand}: 处理了 {len(brand_results)} 张图片")
-        
-        # 创建DataFrame
+
         df = pd.DataFrame(all_results)
-        
-        # 保存结果
         output_path = DATA_CONFIG["processed_data"] / "auto_annotated_dataset.csv"
-        df.to_csv(output_path, index=False, encoding='utf-8')
+        df.to_csv(output_path, index=False, encoding="utf-8")
         print(f"✅ 自动标注数据集已保存: {len(df)} 条记录")
         print(f"📁 保存路径: {output_path}")
-        
+
         return df
 
-def main():
-    """主函数 - 演示AI标注功能"""
+    def export_image_encoder(self) -> None:
+        """Export the SigLIP image encoder to ONNX/TensorRT."""
+        if self.vision_language_cfg.provider != "siglip":
+            raise NotImplementedError("ONNX导出目前仅针对SigLIP配置")
+
+        deployment_cfg = MODEL_CONFIG.get("deployment", {})
+        onnx_path = deployment_cfg.get("onnx_path")
+        engine_path = deployment_cfg.get("engine_path")
+        if onnx_path is None or engine_path is None:
+            raise ValueError("缺少部署路径配置")
+
+        processor = getattr(self.vl_model, "processor", None)
+        image_size = 224
+        if processor is not None:
+            size = getattr(processor, "image_size", getattr(processor, "size", {}))
+            if isinstance(size, dict):
+                image_size = size.get("height", image_size)
+            elif isinstance(size, int):
+                image_size = size
+
+        dummy = torch.randn(1, 3, image_size, image_size, device=self.device, dtype=self.vl_model.model.dtype)
+        vision_encoder = getattr(self.vl_model.model, "vision_model", None)
+        if vision_encoder is None:
+            raise AttributeError("SigLIP模型缺少vision_model子模块")
+
+        export_onnx(vision_encoder, dummy, Path(onnx_path))
+        engine = build_tensorrt_engine(Path(onnx_path), Path(engine_path))
+        if engine:
+            print(f"⚡ TensorRT引擎已生成: {engine}")
+        else:
+            print("⚠️ 未安装TensorRT，已仅导出ONNX。")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Car image auto-tagging utilities")
+    parser.add_argument("--max-per-brand", type=int, default=20, help="Limit number of images per brand during batch tagging")
+    parser.add_argument("--export-encoder", action="store_true", help="Export SigLIP image encoder to ONNX/TensorRT and exit")
+    args = parser.parse_args()
+
     print("🤖 启动汽车图片AI标注系统...")
-    
-    # 初始化标注器
+
     tagger = CarImageTagger()
-    
-    # 处理所有品牌图片（限制数量以节省时间）
-    df = tagger.process_all_brands(max_images_per_brand=20)
-    
-    # 显示统计信息
+    if args.export_encoder:
+        tagger.export_image_encoder()
+        return
+
+    df = tagger.process_all_brands(max_images_per_brand=args.max_per_brand)
+
     print("\n📊 标注结果统计:")
     print(f"  总图片数: {len(df)}")
-    print(f"  品牌分布: {df['brand'].value_counts().to_dict()}")
-    print(f"  角度分布: {df['angle'].value_counts().to_dict()}")
-    print(f"  风格分布: {df['style'].value_counts().to_dict()}")
-    print(f"  平均置信度: {df['confidence'].mean():.3f}")
+    if not df.empty:
+        print(f"  品牌分布: {df['brand'].value_counts().to_dict()}")
+        print(f"  角度分布: {df['angle'].value_counts().to_dict()}")
+        print(f"  风格分布: {df['style'].value_counts().to_dict()}")
+        print(f"  平均置信度: {df['confidence'].mean():.3f}")
+
 
 if __name__ == "__main__":
     main()
