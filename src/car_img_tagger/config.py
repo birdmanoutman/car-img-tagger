@@ -4,8 +4,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# 项目根目录
-PROJECT_ROOT = Path(__file__).parent
+# 项目根目录（src/car_img_tagger/ -> src -> project）
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # 数据路径配置
 DATA_CONFIG = {

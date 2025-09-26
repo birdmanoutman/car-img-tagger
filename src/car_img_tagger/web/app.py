@@ -15,8 +15,8 @@ from PIL import Image
 import io
 import base64
 
-from database import CarTagDatabase
-from config import DATA_CONFIG, API_CONFIG
+from ..database import CarTagDatabase
+from ..config import DATA_CONFIG, API_CONFIG
 
 # 创建FastAPI应用
 app = FastAPI(title="汽车图片智能标签系统", version="1.0.0")

@@ -12,10 +12,10 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-from active_learning import compute_uncertainty
-from config import DATA_CONFIG, LABEL_CONFIG, MODEL_CONFIG
-from models.vision_language import VisionLanguageConfig, VisionLanguageModel
-from deployment_utils import build_tensorrt_engine, export_onnx
+from .active_learning import compute_uncertainty
+from .config import DATA_CONFIG, LABEL_CONFIG, MODEL_CONFIG
+from .modeling.vision_language import VisionLanguageConfig, VisionLanguageModel
+from .deployment import build_tensorrt_engine, export_onnx
 
 
 class CarImageTagger:

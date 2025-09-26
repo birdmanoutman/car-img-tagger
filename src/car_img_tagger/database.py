@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 import hashlib
 
-from config import DATABASE_CONFIG, DATA_CONFIG
+from .config import DATABASE_CONFIG, DATA_CONFIG
 
 class CarTagDatabase:
     def __init__(self, db_path: Optional[str] = None):
@@ -291,7 +291,7 @@ class CarTagDatabase:
         df = pd.read_csv(csv_path)
         
         # 导入标签定义
-        from config import LABEL_CONFIG
+        from .config import LABEL_CONFIG
         
         for category, tags in LABEL_CONFIG.items():
             if isinstance(tags, list):

@@ -34,7 +34,7 @@ pip install -r requirements.txt
 ### 2. 启动Web应用
 ```bash
 # 启动Web服务
-uvicorn web_app:app --reload --port 8000
+python scripts/run_server.py
 ```
 
 访问 http://localhost:8000 查看Web界面
@@ -42,46 +42,47 @@ uvicorn web_app:app --reload --port 8000
 ### 3. 训练模型（可选）
 ```bash
 # 训练角度分类模型
-python advanced_train_model.py
+python scripts/train_angle_classifier.py
 
 # 运行品牌图片标注
-python enhanced_brand_image_tagger.py
+python scripts/run_enhanced_brand_tagger.py
 ```
 
 ## 📁 项目结构
 
 ```
 car-img-tagger/
-├── 📊 核心模块
-│   ├── web_app.py                    # FastAPI Web应用
-│   ├── ai_models.py                  # AI模型封装
-│   ├── database.py                   # 数据库操作
-│   ├── color_detection_utils.py     # 颜色检测工具
-│   └── config.py                     # 系统配置
-├── 🤖 训练和推理
-│   ├── advanced_train_model.py       # 高级模型训练
-│   └── enhanced_brand_image_tagger.py # 品牌图片标注
-├── 📁 数据目录
-│   ├── 各标签素材/                   # 角度样本图片
-│   ├── processed_data/               # 处理后数据
-│   ├── databases/                    # SQLite数据库
-│   ├── models/                       # 训练好的模型
-│   └── output/                       # 输出结果
-├── 🌐 Web资源
-│   ├── templates/                    # HTML模板
-│   └── static/                       # 静态文件
-├── 📖 文档
-│   ├── docs/                         # 详细文档
-│   │   ├── 使用指南.md
-│   │   ├── 腾讯云COS图片标注使用指南.md
-│   │   └── 项目总结.md
-│   ├── README.md                     # 项目说明
-│   └── AGENTS.md                     # 开发指南
-├── 🐳 部署配置
-│   ├── docker-compose.yml            # Docker编排
-│   └── requirements.txt              # 依赖列表
-└── 📊 报告
-    └── reports/                      # 分析报告
+├── src/
+│   └── car_img_tagger/
+│       ├── __init__.py               # 包导出
+│       ├── active_learning.py        # 不确定性计算
+│       ├── auto_tagging.py           # SigLIP 自动标注流程
+│       ├── color_detection.py        # 颜色检测工具
+│       ├── config.py                 # 全局配置
+│       ├── database.py               # 数据库操作
+│       ├── deployment.py             # ONNX/TensorRT 导出
+│       ├── modeling/
+│       │   └── vision_language.py    # 视觉语言模型封装
+│       └── web/
+│           └── app.py                # FastAPI 应用入口
+├── scripts/
+│   ├── auto_tag.py                   # 批量自动标注入口
+│   ├── build_review_queue.py         # 主动学习审核队列
+│   ├── export_encoder.py             # 导出 SigLIP 编码器
+│   ├── run_server.py                 # 启动 Web 服务
+│   ├── run_enhanced_brand_tagger.py  # 品牌标注脚本
+│   └── train_angle_classifier.py     # 角度分类训练
+├── docs/                             # 文档中心
+├── processed_data/                   # 处理后数据
+├── databases/                        # SQLite 数据库
+├── models/                           # 训练权重与模型文件
+├── templates/                        # HTML 模板
+├── static/                           # 静态资源
+├── output/                           # 结果输出
+├── 各标签素材/                        # 样本图片
+├── requirements.txt                  # 依赖列表
+├── docker-compose.yml                # Docker 编排
+└── reports/                          # 分析报告
 ```
 
 ## 🔧 使用指南
@@ -95,10 +96,10 @@ car-img-tagger/
 ### AI模型训练
 ```bash
 # 训练角度分类模型
-python advanced_train_model.py
+python scripts/train_angle_classifier.py
 
 # 运行品牌图片标注
-python enhanced_brand_image_tagger.py
+python scripts/run_enhanced_brand_tagger.py
 ```
 
 ### 腾讯云COS集成

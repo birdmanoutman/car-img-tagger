@@ -6,19 +6,28 @@
 
 import os
 import json
+import time
+import warnings
+from pathlib import Path
+
+import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torchvision.transforms as transforms
 from PIL import Image
-import numpy as np
-from pathlib import Path
-import time
 from tqdm import tqdm
-import warnings
+
 warnings.filterwarnings('ignore')
 
-from color_detection_utils import CarColorDetector
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
+from car_img_tagger.color_detection import CarColorDetector
 
 class EnhancedBrandImageTagger:
     def __init__(self, model_path='models/ensemble_car_angle_classifier.pth', 

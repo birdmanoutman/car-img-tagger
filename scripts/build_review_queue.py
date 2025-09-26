@@ -5,13 +5,19 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(SRC_DIR))
+
 import pandas as pd
 
-from active_learning import select_for_review
-from config import MODEL_CONFIG
+from car_img_tagger.active_learning import select_for_review
+from car_img_tagger.config import DATA_CONFIG, MODEL_CONFIG
 
 
 def _coerce_mapping(value: Any) -> Dict[str, Any]:
@@ -108,7 +114,8 @@ def summarise_sample(sample: Dict[str, Any]) -> Dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a low-confidence review queue")
     parser.add_argument("predictions", type=Path, help="Path to the auto_annotated_dataset.csv file")
-    parser.add_argument("--output", type=Path, default=Path("processed_data/review_queue.json"), help="Where to write the review queue JSON")
+    default_output = DATA_CONFIG["processed_data"] / "review_queue.json"
+    parser.add_argument("--output", type=Path, default=default_output, help="Where to write the review queue JSON")
     parser.add_argument("--max-items", type=int, default=200, help="Maximum number of samples to emit")
     parser.add_argument("--entropy-threshold", type=float, default=None, help="Override entropy threshold; defaults to config setting")
     args = parser.parse_args()
