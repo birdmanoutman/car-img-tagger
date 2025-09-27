@@ -14,7 +14,7 @@ if str(SRC_DIR) not in sys.path:
 
 
 def main() -> None:
-    uvicorn.run("car_img_tagger.web.app:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("car_img_tagger.web.app:app", host="0.0.0.0", port=8001, reload=True)
 
 
 if __name__ == "__main__":

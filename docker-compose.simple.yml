@@ -1,0 +1,45 @@
+version: '3.13'
+
+services:
+  # 汽车图片标注Web服务
+  car-img-tagger:
+    build: .
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # 挂载数据目录
+      - ./databases:/app/databases
+      - ./processed_data:/app/processed_data
+      - ./models:/app/models
+      - ./output:/app/output
+      - ./reports:/app/reports
+      # 挂载图片素材目录
+      - ./图片素材:/app/图片素材
+      - ./各标签素材:/app/各标签素材
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/statistics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis缓存服务（可选）
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: car-tags-network
