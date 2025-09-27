@@ -1,14 +1,17 @@
-version: '3.13'
+version: '3.8'
 
 services:
-  # 汽车图片标注Web服务
+  # 汽车图片标注Web服务（简化版）
   car-img-tagger:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
     ports:
       - "8001:8001"
     environment:
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
+      - REDIS_URL=redis://redis:6379
     volumes:
       # 挂载数据目录
       - ./databases:/app/databases
@@ -19,15 +22,19 @@ services:
       # 挂载图片素材目录
       - ./图片素材:/app/图片素材
       - ./各标签素材:/app/各标签素材
+    depends_on:
+      - redis
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/api/statistics"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 20s
+    networks:
+      - car-tags-network
 
-  # Redis缓存服务（可选）
+  # Redis缓存服务
   redis:
     image: redis:7-alpine
     ports:
@@ -35,11 +42,19 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - car-tags-network
 
 volumes:
   redis_data:
+    driver: local
 
 networks:
-  default:
-    name: car-tags-network
+  car-tags-network:
+    driver: bridge

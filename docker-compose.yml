@@ -1,34 +1,58 @@
 version: '3.8'
 
 services:
-  # API Gateway
-  api-gateway:
-    build: ./services/api-gateway
+  # 汽车图片标注主服务
+  car-img-tagger:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8001:8001"
     environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags
+    volumes:
+      # 挂载数据目录
+      - ./databases:/app/databases
+      - ./processed_data:/app/processed_data
+      - ./models:/app/models
+      - ./output:/app/output
+      - ./reports:/app/reports
+      # 挂载图片素材目录
+      - ./图片素材:/app/图片素材
+      - ./各标签素材:/app/各标签素材
     depends_on:
-      - redis
       - postgres
-      - ai-service
-      - web-service
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     networks:
       - car-tags-network
 
-  # AI推理服务
+  # AI推理服务（GPU支持）
   ai-service:
-    build: ./services/ai-service
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379
-      - MODEL_PATH=/models
+      - MODEL_PATH=/app/models
       - GPU_ENABLED=true
       - BATCH_SIZE=8
       - MAX_WORKERS=4
     volumes:
-      - ./models:/models
-      - ./data:/data
+      - ./models:/app/models
+      - ./processed_data:/app/processed_data
+      - ./output:/app/output
     deploy:
       resources:
         reservations:
@@ -36,95 +60,115 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    networks:
-      - car-tags-network
-
-  # Web管理服务
-  web-service:
-    build: ./services/web-service
-    environment:
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags
-      - REDIS_URL=redis://redis:6379
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - car-tags-network
-
-  # 任务队列服务
-  task-queue:
-    build: ./services/task-queue
-    environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags
     depends_on:
       - redis
-      - postgres
+    restart: unless-stopped
     networks:
       - car-tags-network
 
   # PostgreSQL数据库
   postgres:
-    image: postgres:15
+    image: postgres:15-alpine
     environment:
       - POSTGRES_DB=car_tags
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./databases/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - car-tags-network
 
   # Redis缓存
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - car-tags-network
 
-  # Nginx负载均衡
+  # Nginx反向代理
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./nginx/ssl:/etc/nginx/ssl
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - api-gateway
+      - car-img-tagger
+    restart: unless-stopped
     networks:
       - car-tags-network
 
-  # 监控服务
+  # 监控服务 - Prometheus
   prometheus:
-    image: prom/prometheus
+    image: prom/prometheus:latest
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
     networks:
       - car-tags-network
 
+  # 监控服务 - Grafana
   grafana:
-    image: grafana/grafana
+    image: grafana/grafana:latest
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
     networks:
       - car-tags-network
 
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
   grafana_data:
+    driver: local
 
 networks:
   car-tags-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
