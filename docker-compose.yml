@@ -3,9 +3,7 @@ version: '3.8'
 services:
   # 汽车图片标注主服务
   car-img-tagger:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     ports:
       - "8001:8001"
     environment:
@@ -24,7 +22,6 @@ services:
       - ./图片素材:/app/图片素材
       - ./各标签素材:/app/各标签素材
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
     healthcheck:
@@ -36,59 +33,7 @@ services:
     networks:
       - car-tags-network
 
-  # AI推理服务（GPU支持）
-  ai-service:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      - PYTHONPATH=/app/src
-      - PYTHONUNBUFFERED=1
-      - REDIS_URL=redis://redis:6379
-      - MODEL_PATH=/app/models
-      - GPU_ENABLED=true
-      - BATCH_SIZE=8
-      - MAX_WORKERS=4
-    volumes:
-      - ./models:/app/models
-      - ./processed_data:/app/processed_data
-      - ./output:/app/output
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    depends_on:
-      - redis
-    restart: unless-stopped
-    networks:
-      - car-tags-network
-
-  # PostgreSQL数据库
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=car_tags
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./databases/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - car-tags-network
-
-  # Redis缓存
+  # Redis缓存（必需）
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
@@ -105,7 +50,30 @@ services:
     networks:
       - car-tags-network
 
-  # Nginx反向代理
+  # PostgreSQL数据库（可选，用于生产环境）
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=car_tags
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - car-tags-network
+    profiles:
+      - production
+
+  # Nginx反向代理（可选，用于生产环境）
   nginx:
     image: nginx:alpine
     ports:
@@ -119,17 +87,17 @@ services:
     restart: unless-stopped
     networks:
       - car-tags-network
+    profiles:
+      - production
 
-  # 监控服务 - Prometheus
+  # 监控服务 - Prometheus（可选，用于生产环境）
   prometheus:
     image: prom/prometheus:latest
     ports:
       - "9090:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
@@ -138,8 +106,10 @@ services:
     restart: unless-stopped
     networks:
       - car-tags-network
+    profiles:
+      - production
 
-  # 监控服务 - Grafana
+  # 监控服务 - Grafana（可选，用于生产环境）
   grafana:
     image: grafana/grafana:latest
     ports:
@@ -149,17 +119,18 @@ services:
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - prometheus
     restart: unless-stopped
     networks:
       - car-tags-network
+    profiles:
+      - production
 
 volumes:
-  postgres_data:
-    driver: local
   redis_data:
+    driver: local
+  postgres_data:
     driver: local
   prometheus_data:
     driver: local
@@ -169,6 +140,3 @@ volumes:
 networks:
   car-tags-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.20.0.0/16

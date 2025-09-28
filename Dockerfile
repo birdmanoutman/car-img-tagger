@@ -1,5 +1,5 @@
-# 使用Python 3.11官方镜像作为基础镜像
-FROM python:3.11-slim
+# 使用Python 3.12官方镜像作为基础镜像（更稳定）
+FROM python:3.12-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -11,8 +11,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y \
+# 更新包列表并安装系统依赖（添加重试机制）
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     build-essential \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -36,6 +37,7 @@ RUN apt-get update && apt-get install -y \
     gfortran \
     wget \
     curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建非root用户
@@ -63,5 +65,5 @@ EXPOSE 8001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8001/health || exit 1
 
-# 设置启动命令
+# 设置启动命令（默认使用简化服务器，可通过环境变量覆盖）
 CMD ["python", "scripts/run_simple_server.py"]

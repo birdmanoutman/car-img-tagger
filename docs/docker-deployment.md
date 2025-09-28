@@ -4,26 +4,26 @@
 
 ## 快速开始
 
-### 1. 简化部署（推荐用于开发和小规模部署）
+### 1. 基础部署（推荐用于开发和测试）
 
 ```bash
-# 使用简化版Docker Compose启动服务
-docker-compose -f docker-compose.simple.yml up -d
+# 启动基础服务（仅包含主应用和Redis）
+docker-compose up -d
 
 # 查看服务状态
-docker-compose -f docker-compose.simple.yml ps
+docker-compose ps
 
 # 查看日志
-docker-compose -f docker-compose.simple.yml logs -f car-img-tagger
+docker-compose logs -f car-img-tagger
 ```
 
 访问地址：http://localhost:8001
 
-### 2. 完整部署（推荐用于生产环境）
+### 2. 生产环境部署（包含监控和数据库）
 
 ```bash
-# 使用完整版Docker Compose启动所有服务
-docker-compose up -d
+# 启动所有服务（包括PostgreSQL、Nginx、监控等）
+docker-compose --profile production up -d
 
 # 查看服务状态
 docker-compose ps
@@ -41,33 +41,46 @@ docker-compose logs -f car-img-tagger
 
 ## Docker镜像说明
 
-### 1. Dockerfile（完整版）
-- 包含所有AI模型依赖
-- 支持GPU加速
-- 适用于生产环境
-
-### 2. Dockerfile.simple（简化版）
-- 仅包含Web服务依赖
-- 轻量级部署
-- 适用于开发和测试
-
-### 3. Dockerfile.minimal（最小版）
-- 最小依赖集
-- 快速启动
-- 适用于演示
+### Dockerfile（统一版本）
+- 基于Python 3.13官方镜像
+- 包含所有必要的AI模型依赖
+- 支持GPU加速（需要NVIDIA Docker）
+- 适用于开发、测试和生产环境
+- 默认使用简化服务器启动，避免加载重型AI模型
 
 ## 构建自定义镜像
 
 ```bash
-# 构建完整版镜像
+# 构建镜像
 docker build -t car-img-tagger:latest .
 
-# 构建简化版镜像
-docker build -f Dockerfile.simple -t car-img-tagger:simple .
-
-# 构建最小版镜像
-docker build -f Dockerfile.minimal -t car-img-tagger:minimal .
+# 运行容器
+docker run -d -p 8001:8001 car-img-tagger:latest
 ```
+
+## 部署模式说明
+
+### 基础模式（默认）
+```bash
+# 仅启动主应用和Redis
+docker-compose up -d
+```
+包含服务：
+- car-img-tagger（主应用）
+- redis（缓存）
+
+### 生产模式
+```bash
+# 启动所有服务
+docker-compose --profile production up -d
+```
+包含服务：
+- car-img-tagger（主应用）
+- redis（缓存）
+- postgres（数据库）
+- nginx（反向代理）
+- prometheus（监控）
+- grafana（仪表板）
 
 ## 数据持久化
 
@@ -81,9 +94,9 @@ docker build -f Dockerfile.minimal -t car-img-tagger:minimal .
 - `./各标签素材` - 标签分类素材
 
 ### 数据库持久化
-- PostgreSQL数据存储在Docker volume中
 - Redis数据存储在Docker volume中
-- 监控数据存储在Docker volume中
+- PostgreSQL数据存储在Docker volume中（生产模式）
+- 监控数据存储在Docker volume中（生产模式）
 
 ## 环境变量配置
 
@@ -91,12 +104,7 @@ docker build -f Dockerfile.minimal -t car-img-tagger:minimal .
 - `PYTHONPATH=/app/src` - Python路径
 - `PYTHONUNBUFFERED=1` - Python输出缓冲
 - `REDIS_URL=redis://redis:6379` - Redis连接URL
-- `DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags` - 数据库连接URL
-
-### GPU支持
-- `GPU_ENABLED=true` - 启用GPU支持
-- `BATCH_SIZE=8` - 批处理大小
-- `MAX_WORKERS=4` - 最大工作进程数
+- `DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags` - 数据库连接URL（生产模式）
 
 ## 健康检查
 
@@ -210,16 +218,37 @@ docker-compose build
 
 # 重启服务
 docker-compose up -d
+
+# 或者重启特定服务
+docker-compose restart car-img-tagger
 ```
 
 ### 清理资源
 ```bash
-# 停止所有服务
+# 停止基础服务
 docker-compose down
+
+# 停止所有服务（包括生产模式）
+docker-compose --profile production down
 
 # 清理未使用的资源
 docker system prune -a
 
 # 清理特定服务的资源
 docker-compose down -v
+```
+
+### 服务管理
+```bash
+# 查看运行状态
+docker-compose ps
+
+# 查看日志
+docker-compose logs -f car-img-tagger
+
+# 进入容器
+docker-compose exec car-img-tagger bash
+
+# 重启服务
+docker-compose restart car-img-tagger
 ```

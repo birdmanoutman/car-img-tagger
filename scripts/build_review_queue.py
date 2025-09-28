@@ -147,7 +147,7 @@ def main() -> None:
             indent=2,
         )
 
-    print(f"📄 Review queue saved to {args.output} (samples: {len(summary_payload)})")
+    print(f"[info] Review queue saved to {args.output} (samples: {len(summary_payload)})")
 
 
 if __name__ == "__main__":

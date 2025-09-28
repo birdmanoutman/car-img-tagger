@@ -15,6 +15,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.models as models
+from torchvision.models import (
+    EfficientNet_B3_Weights,
+    EfficientNet_B4_Weights,
+    ResNet50_Weights,
+)
 import torchvision.transforms as transforms
 from PIL import Image
 from sklearn.metrics import classification_report, confusion_matrix
@@ -76,14 +81,17 @@ class AdvancedCarAngleClassifier(nn.Module):
         
         # 使用EfficientNet作为骨干网络
         if model_name == 'efficientnet_b3':
-            self.backbone = models.efficientnet_b3(pretrained=True)
-            feature_dim = 1536
+            weights = EfficientNet_B3_Weights.DEFAULT
+            self.backbone = models.efficientnet_b3(weights=weights)
+            feature_dim = self.backbone.classifier[1].in_features
         elif model_name == 'efficientnet_b4':
-            self.backbone = models.efficientnet_b4(pretrained=True)
-            feature_dim = 1792
+            weights = EfficientNet_B4_Weights.DEFAULT
+            self.backbone = models.efficientnet_b4(weights=weights)
+            feature_dim = self.backbone.classifier[1].in_features
         else:  # 回退到ResNet50
-            self.backbone = models.resnet50(pretrained=True)
-            feature_dim = 2048
+            weights = ResNet50_Weights.DEFAULT
+            self.backbone = models.resnet50(weights=weights)
+            feature_dim = self.backbone.fc.in_features
         
         # 添加注意力机制
         self.attention = AttentionModule(feature_dim)
@@ -533,3 +541,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
