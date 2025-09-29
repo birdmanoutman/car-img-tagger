@@ -11,10 +11,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_NO_CACHE_DIR=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# 更新包列表并安装系统依赖（添加重试机制）
-RUN apt-get update --fix-missing && \
+# 配置国内镜像源并安装系统依赖
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update --fix-missing && \
     apt-get install -y --no-install-recommends \
     build-essential \
+    cmake \
     libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
@@ -22,19 +25,12 @@ RUN apt-get update --fix-missing && \
     libxrender-dev \
     libgomp1 \
     libgcc-s1 \
-    libgthread-2.0-0 \
-    libgtk-3-0 \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libv4l-dev \
-    libxvidcore-dev \
-    libx264-dev \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
     libatlas-base-dev \
-    gfortran \
+    default-libmysqlclient-dev \
+    pkg-config \
     wget \
     curl \
     && apt-get clean \
@@ -43,10 +39,10 @@ RUN apt-get update --fix-missing && \
 # 创建非root用户
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# 复制requirements.txt并安装Python依赖
+# 复制requirements.txt并安装Python依赖（使用国内镜像源）
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制项目文件
 COPY . .

@@ -110,6 +110,14 @@ DATABASE_CONFIG = {
     "sqlite": {
         "path": DATA_CONFIG["databases"] / "car_tags.db",
     },
+    "mysql": {
+        "host": os.getenv("MYSQL_HOST", "localhost"),
+        "port": int(os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MYSQL_USER", "car_user"),
+        "password": os.getenv("MYSQL_PASSWORD", "password"),
+        "database": os.getenv("MYSQL_DATABASE", "car_tags"),
+        "charset": "utf8mb4",
+    },
     "mongodb": {
         "host": "localhost",
         "port": 27017,

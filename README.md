@@ -9,7 +9,7 @@
 - **多维度标签**: 支持24个角度标签、8个品牌、16种设计风格
 - **半自动流水线**: AI预标注 + 人工审核的混合标注模式
 - **Web管理界面**: 直观的图片浏览、搜索、标签管理界面
-- **数据库存储**: SQLite数据库存储图片和标签信息
+- **数据库存储**: 支持SQLite（开发）和MySQL（生产）数据库存储图片和标签信息
 - **颜色检测**: 自动检测汽车主要颜色
 - **腾讯云COS支持**: 支持从腾讯云COS批量处理图片
 
@@ -32,12 +32,31 @@ pip install -r requirements.txt
 ```
 
 ### 2. 启动Web应用
+
+#### 开发环境（使用SQLite）
 ```bash
+# 启动Web服务（默认使用SQLite）
+python scripts/run_server.py
+```
+
+#### 生产环境（使用MySQL）
+```bash
+# 启动MySQL服务
+docker-compose --profile production up mysql -d
+
+# 设置环境变量使用MySQL
+export DATABASE_TYPE=mysql
+export MYSQL_HOST=localhost
+export MYSQL_PORT=3306
+export MYSQL_USER=car_user
+export MYSQL_PASSWORD=password
+export MYSQL_DATABASE=car_tags
+
 # 启动Web服务
 python scripts/run_server.py
 ```
 
-访问 http://localhost:8000 查看Web界面
+访问 http://localhost:8001 查看Web界面
 
 ### 3. 训练模型（可选）
 ```bash
@@ -101,6 +120,28 @@ python scripts/train_angle_classifier.py
 # 运行品牌图片标注
 python scripts/run_enhanced_brand_tagger.py
 ```
+
+### 数据库管理
+
+#### 测试数据库连接
+```bash
+# 测试MySQL和SQLite连接
+python scripts/test_mysql_connection.py
+```
+
+#### 从SQLite迁移到MySQL
+```bash
+# 运行迁移脚本
+python scripts/migrate_to_mysql.py
+```
+
+#### 环境变量配置
+- `DATABASE_TYPE`: 数据库类型 (`sqlite` 或 `mysql`)
+- `MYSQL_HOST`: MySQL主机地址
+- `MYSQL_PORT`: MySQL端口 (默认: 3306)
+- `MYSQL_USER`: MySQL用户名
+- `MYSQL_PASSWORD`: MySQL密码
+- `MYSQL_DATABASE`: MySQL数据库名
 
 ### 腾讯云COS集成
 详细使用说明请参考 [腾讯云COS图片标注使用指南](docs/腾讯云COS图片标注使用指南.md)

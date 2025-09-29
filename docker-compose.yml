@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # 汽车图片标注主服务
   car-img-tagger:
@@ -10,7 +8,13 @@ services:
       - PYTHONPATH=/app/src
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql://postgres:password@postgres:5432/car_tags
+      - DATABASE_TYPE=mysql
+      - DATABASE_URL=mysql://car_user:password@mysql:3306/car_tags
+      - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=car_user
+      - MYSQL_PASSWORD=password
+      - MYSQL_DATABASE=car_tags
     volumes:
       # 挂载数据目录
       - ./databases:/app/databases
@@ -50,21 +54,24 @@ services:
     networks:
       - car-tags-network
 
-  # PostgreSQL数据库（可选，用于生产环境）
-  postgres:
-    image: postgres:15-alpine
+  # MySQL数据库（可选，用于生产环境）
+  mysql:
+    image: mysql:8.0
     environment:
-      - POSTGRES_DB=car_tags
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=car_tags
+      - MYSQL_USER=car_user
+      - MYSQL_PASSWORD=password
+      - MYSQL_CHARSET=utf8mb4
+      - MYSQL_COLLATION=utf8mb4_unicode_ci
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d:ro
     ports:
-      - "5432:5432"
+      - "3306:3306"
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "car_user", "-ppassword"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -130,7 +137,7 @@ services:
 volumes:
   redis_data:
     driver: local
-  postgres_data:
+  mysql_data:
     driver: local
   prometheus_data:
     driver: local
