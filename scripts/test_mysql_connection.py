@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 测试MySQL数据库连接
 """
 import os
 import sys
 from pathlib import Path
+
+# 设置控制台编码为UTF-8
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
 
 # 添加项目根目录到Python路径
 project_root = Path(__file__).resolve().parents[1]
@@ -16,9 +23,6 @@ from car_img_tagger.config import DATABASE_CONFIG
 def test_mysql_connection():
     """测试MySQL连接"""
     print("🔍 测试MySQL数据库连接...")
-    
-    # 设置环境变量使用MySQL
-    os.environ['DATABASE_TYPE'] = 'mysql'
     
     try:
         # 创建数据库实例
@@ -72,53 +76,27 @@ def test_mysql_connection():
     
     return True
 
-def test_sqlite_fallback():
-    """测试SQLite回退"""
-    print("\n🔍 测试SQLite回退...")
-    
-    # 设置环境变量使用SQLite
-    os.environ['DATABASE_TYPE'] = 'sqlite'
-    
-    try:
-        db = CarTagDatabase()
-        print("✅ SQLite连接成功!")
-        
-        # 获取统计信息
-        stats = db.get_statistics()
-        print(f"✅ SQLite统计: {stats}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ SQLite连接失败: {e}")
-        return False
-
 def main():
     """主函数"""
-    print("🚀 数据库连接测试")
+    print("🚀 MySQL数据库连接测试")
     print("=" * 50)
     
     # 显示当前配置
     print(f"📋 当前数据库配置:")
     print(f"  MySQL: {DATABASE_CONFIG['mysql']}")
-    print(f"  SQLite: {DATABASE_CONFIG['sqlite']}")
     
     # 测试MySQL
     mysql_ok = test_mysql_connection()
     
-    # 测试SQLite
-    sqlite_ok = test_sqlite_fallback()
-    
     print("\n" + "=" * 50)
     print("📊 测试结果:")
     print(f"  MySQL: {'✅ 通过' if mysql_ok else '❌ 失败'}")
-    print(f"  SQLite: {'✅ 通过' if sqlite_ok else '❌ 失败'}")
     
-    if mysql_ok and sqlite_ok:
-        print("\n🎉 所有数据库连接测试通过!")
+    if mysql_ok:
+        print("\n🎉 MySQL数据库连接测试通过!")
         return 0
     else:
-        print("\n⚠️ 部分数据库连接测试失败")
+        print("\n⚠️ MySQL数据库连接测试失败")
         return 1
 
 if __name__ == "__main__":

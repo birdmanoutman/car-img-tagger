@@ -39,10 +39,10 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 # 创建非root用户
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
-# 复制requirements.txt并安装Python依赖（使用国内镜像源）
+# 复制requirements.txt并安装Python依赖（使用国内镜像源，启用缓存）
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple && \
-    pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+RUN pip install --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 复制项目文件
 COPY . .

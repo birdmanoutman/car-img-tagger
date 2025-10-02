@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+运行任何命令行，先激活虚拟环境 .venv\Scripts\activate

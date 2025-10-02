@@ -4,6 +4,26 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# 加载环境变量
+try:
+    from dotenv import load_dotenv
+    # 从项目根目录加载.env文件
+    project_root = Path(__file__).resolve().parents[2]
+    env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+except ImportError:
+    # 如果没有安装python-dotenv，手动加载.env文件
+    project_root = Path(__file__).resolve().parents[2]
+    env_path = project_root / ".env"
+    if env_path.exists():
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ[key.strip()] = value.strip()
+
 # 项目根目录（src/car_img_tagger/ -> src -> project）
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -105,23 +125,15 @@ MODEL_CONFIG = {
     },
 }
 
-# 数据库配置
+# 数据库配置 - 只使用MySQL
 DATABASE_CONFIG = {
-    "sqlite": {
-        "path": DATA_CONFIG["databases"] / "car_tags.db",
-    },
     "mysql": {
-        "host": os.getenv("MYSQL_HOST", "localhost"),
-        "port": int(os.getenv("MYSQL_PORT", "3306")),
-        "user": os.getenv("MYSQL_USER", "car_user"),
-        "password": os.getenv("MYSQL_PASSWORD", "password"),
-        "database": os.getenv("MYSQL_DATABASE", "car_tags"),
+        "host": os.getenv("DB_HOST", os.getenv("MYSQL_HOST", "localhost")),
+        "port": int(os.getenv("DB_PORT", os.getenv("MYSQL_PORT", "3306"))),
+        "user": os.getenv("DB_USER", os.getenv("MYSQL_USER", "car_user")),
+        "password": os.getenv("DB_PASSWORD", os.getenv("MYSQL_PASSWORD", "password")),
+        "database": os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE", "car_tags")),
         "charset": "utf8mb4",
-    },
-    "mongodb": {
-        "host": "localhost",
-        "port": 27017,
-        "database": "car_tags",
     },
 }
 
@@ -135,4 +147,8 @@ API_CONFIG = {
 # 创建必要的目录
 for path in DATA_CONFIG.values():
     if isinstance(path, Path):
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            # 如果路径已存在且是文件，跳过
+            pass
