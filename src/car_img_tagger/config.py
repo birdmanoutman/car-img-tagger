@@ -132,7 +132,7 @@ DATABASE_CONFIG = {
         "port": int(os.getenv("DB_PORT", os.getenv("MYSQL_PORT", "3306"))),
         "user": os.getenv("DB_USER", os.getenv("MYSQL_USER", "car_user")),
         "password": os.getenv("DB_PASSWORD", os.getenv("MYSQL_PASSWORD", "password")),
-        "database": os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE", "car_tags")),
+        "database": os.getenv("DB_NAME", os.getenv("MYSQL_DATABASE", "cardesignspace_dev")),
         "charset": "utf8mb4",
     },
 }

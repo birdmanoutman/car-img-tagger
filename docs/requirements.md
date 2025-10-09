@@ -15,8 +15,6 @@
 
 ### 1.3 应用场景
 - 汽车设计公司的图片资源管理
-- 汽车销售平台的商品图片标注
-- 汽车保险公司的车辆识别
 - 汽车媒体的内容分类
 - 学术研究的数据集构建
 
@@ -335,16 +333,8 @@
 - CPU: 16核心
 - 内存: 32GB RAM
 - 存储: 1TB SSD（NVMe）
-- GPU: NVIDIA A5000（24GB显存）
+- GPU: NVIDIA A5000 移动版（16GB显存）
 
-### 7.3 软件依赖
-- Python 3.8+
-- PyTorch 2.0+
-- FastAPI 0.100+
-- SQLite 3.0+
-- accelerate 0.22+
-- onnxruntime-gpu 1.16+
-- Docker (可选)
 
 ## 8. 项目交付物
 

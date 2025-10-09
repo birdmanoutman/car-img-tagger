@@ -9,12 +9,12 @@ services:
       - PYTHONUNBUFFERED=1
       - REDIS_URL=redis://redis:6379
       - DATABASE_TYPE=mysql
-      - DATABASE_URL=mysql://car_user:password@mysql:3306/car_tags
-      - MYSQL_HOST=mysql
+      - DATABASE_URL=mysql://Jason:Jason123456!@49.235.98.5:3306/cardesignspace
+      - MYSQL_HOST=49.235.98.5
       - MYSQL_PORT=3306
-      - MYSQL_USER=car_user
-      - MYSQL_PASSWORD=password
-      - MYSQL_DATABASE=car_tags
+      - MYSQL_USER=Jason
+      - MYSQL_PASSWORD=Jason123456!
+      - MYSQL_DATABASE=cardesignspace
     volumes:
       # 挂载数据目录
       - ./databases:/app/databases

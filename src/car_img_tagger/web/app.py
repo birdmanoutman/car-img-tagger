@@ -2,7 +2,7 @@
 Web应用模块 - 标签管理和展示界面
 """
 from fastapi import FastAPI, Request, Form, File, UploadFile, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
@@ -160,94 +160,174 @@ async def get_statistics():
 @app.get("/api/brands")
 async def get_brands():
     """获取所有品牌"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT brand FROM images WHERE brand != "Unknown" ORDER BY brand')
+        cursor.execute('SELECT DISTINCT name FROM brands ORDER BY name')
         brands = [row[0] for row in cursor.fetchall()]
         return brands
 
 @app.get("/api/angles")
 async def get_angles():
     """获取所有角度"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT name FROM tags WHERE category = "angles" ORDER BY name')
-        angles = [row[0] for row in cursor.fetchall()]
+        # 从images表的tags字段中提取角度标签
+        cursor.execute('''
+            SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', idx, ']'))) as angle
+            FROM images i
+            JOIN (
+                SELECT 0 as idx UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION
+                SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION
+                SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION
+                SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION
+                SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24
+            ) t
+            WHERE JSON_EXTRACT(tags, CONCAT('$[', idx, ']')) IS NOT NULL
+            AND JSON_UNQUOTE(JSON_EXTRACT(tags, CONCAT('$[', idx, ']'))) LIKE '%-%'
+            ORDER BY angle
+        ''')
+        angles = [row[0] for row in cursor.fetchall() if row[0]]
         return angles
 
 @app.get("/api/styles")
 async def get_styles():
     """获取所有风格"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT name FROM tags WHERE category = "styles" ORDER BY name')
-        styles = [row[0] for row in cursor.fetchall()]
+        # 从images表的styleTags字段中提取风格标签
+        cursor.execute('''
+            SELECT DISTINCT JSON_UNQUOTE(JSON_EXTRACT(styleTags, CONCAT('$[', idx, ']'))) as style
+            FROM images i
+            JOIN (
+                SELECT 0 as idx UNION SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 4 UNION
+                SELECT 5 UNION SELECT 6 UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION
+                SELECT 10 UNION SELECT 11 UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION
+                SELECT 15 UNION SELECT 16 UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION
+                SELECT 20 UNION SELECT 21 UNION SELECT 22 UNION SELECT 23 UNION SELECT 24
+            ) t
+            WHERE JSON_EXTRACT(styleTags, CONCAT('$[', idx, ']')) IS NOT NULL
+            AND JSON_UNQUOTE(JSON_EXTRACT(styleTags, CONCAT('$[', idx, ']'))) IS NOT NULL
+            ORDER BY style
+        ''')
+        styles = [row[0] for row in cursor.fetchall() if row[0]]
         return styles
 
 @app.get("/api/years")
 async def get_years():
     """获取所有年份"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT DISTINCT year FROM images WHERE year != "Unknown" ORDER BY year DESC')
-        years = [row[0] for row in cursor.fetchall()]
+        cursor.execute('SELECT DISTINCT year FROM models WHERE year IS NOT NULL ORDER BY year DESC')
+        years = [str(row[0]) for row in cursor.fetchall()]
         return years
 
 @app.get("/image/{image_id}")
 async def serve_image(image_id: str):
     """提供图片服务"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT image_path FROM images WHERE image_id = ?', (image_id,))
+        cursor.execute('SELECT url FROM images WHERE id = %s', (image_id,))
         result = cursor.fetchone()
         
         if not result:
             raise HTTPException(status_code=404, detail="图片不存在")
         
-        image_path = result[0]
-        if not Path(image_path).exists():
-            raise HTTPException(status_code=404, detail="图片文件不存在")
+        image_url = result[0]
+        # 对于远程URL，直接重定向
+        if image_url.startswith('http'):
+            return RedirectResponse(url=image_url)
         
-        return FileResponse(image_path)
+        # 对于本地路径，返回文件
+        if Path(image_url).exists():
+            return FileResponse(image_url)
+        else:
+            raise HTTPException(status_code=404, detail="图片文件不存在")
 
 @app.get("/thumbnail/{image_id}")
 async def serve_thumbnail(image_id: str, size: int = 200):
     """提供缩略图服务"""
-    import sqlite3
-    with sqlite3.connect(db.db_path) as conn:
+    import pymysql
+    with pymysql.connect(
+        host=db.db_config['host'],
+        port=db.db_config['port'],
+        user=db.db_config['user'],
+        password=db.db_config['password'],
+        database=db.db_config['database'],
+        charset=db.db_config['charset']
+    ) as conn:
         cursor = conn.cursor()
-        cursor.execute('SELECT image_path FROM images WHERE image_id = ?', (image_id,))
+        cursor.execute('SELECT url FROM images WHERE id = %s', (image_id,))
         result = cursor.fetchone()
         
         if not result:
             raise HTTPException(status_code=404, detail="图片不存在")
         
-        image_path = result[0]
-        if not Path(image_path).exists():
-            raise HTTPException(status_code=404, detail="图片文件不存在")
+        image_url = result[0]
         
-        # 生成缩略图
-        try:
-            with Image.open(image_path) as img:
-                img.thumbnail((size, size), Image.Resampling.LANCZOS)
-                
-                # 直接返回图片数据
-                buffer = io.BytesIO()
-                img.save(buffer, format='JPEG')
-                buffer.seek(0)
-                
-                return Response(
-                    content=buffer.getvalue(),
-                    media_type="image/jpeg",
-                    headers={"Cache-Control": "max-age=3600"}
-                )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"缩略图生成失败: {str(e)}")
+        # 对于远程URL，直接重定向到原图（暂时不生成缩略图）
+        if image_url.startswith('http'):
+            return RedirectResponse(url=image_url)
+        
+        # 对于本地路径，生成缩略图
+        if Path(image_url).exists():
+            try:
+                with Image.open(image_url) as img:
+                    img.thumbnail((size, size), Image.Resampling.LANCZOS)
+                    
+                    # 直接返回图片数据
+                    buffer = io.BytesIO()
+                    img.save(buffer, format='JPEG')
+                    buffer.seek(0)
+                    
+                    return Response(
+                        content=buffer.getvalue(),
+                        media_type="image/jpeg",
+                        headers={"Cache-Control": "max-age=3600"}
+                    )
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"缩略图生成失败: {str(e)}")
+        else:
+            raise HTTPException(status_code=404, detail="图片文件不存在")
 
 def create_templates():
     """创建HTML模板"""

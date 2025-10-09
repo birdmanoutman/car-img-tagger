@@ -65,75 +65,92 @@ class CarTagDatabase:
         cursor.execute(create_sql)
 
     def init_database(self):
-        """初始化数据库表结构"""
+        """初始化数据库表结构 - 适配远程数据库"""
         print(f"🗄️ 初始化MySQL数据库...")
         
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # MySQL语法
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS images (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    image_path VARCHAR(500) UNIQUE NOT NULL,
-                    image_id VARCHAR(100) UNIQUE NOT NULL,
-                    source VARCHAR(100) NOT NULL,
-                    brand VARCHAR(100),
-                    model VARCHAR(100),
-                    year VARCHAR(20),
-                    width INT,
-                    height INT,
-                    file_size BIGINT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ''')
+            # 检查是否使用远程数据库（cardesignspace）
+            cursor.execute("SELECT DATABASE()")
+            current_db = cursor.fetchone()[0]
             
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS tags (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    name VARCHAR(100) UNIQUE NOT NULL,
-                    category VARCHAR(50) NOT NULL,
-                    description TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS image_tags (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    image_id VARCHAR(100) NOT NULL,
-                    tag_id INT NOT NULL,
-                    confidence FLOAT DEFAULT 1.0,
-                    is_manual BOOLEAN DEFAULT FALSE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (image_id) REFERENCES images (image_id) ON DELETE CASCADE,
-                    FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE,
-                    UNIQUE KEY unique_image_tag (image_id, tag_id)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ''')
-            
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS annotation_history (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    image_id VARCHAR(100) NOT NULL,
-                    action VARCHAR(50) NOT NULL,
-                    old_tags TEXT,
-                    new_tags TEXT,
-                    user_id VARCHAR(100),
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (image_id) REFERENCES images (image_id) ON DELETE CASCADE
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            ''')
-            
-            # 索引
-            self._ensure_index(cursor, 'images', 'idx_images_brand', 'CREATE INDEX idx_images_brand ON images(brand)')
-            self._ensure_index(cursor, 'images', 'idx_images_source', 'CREATE INDEX idx_images_source ON images(source)')
-            self._ensure_index(cursor, 'tags', 'idx_tags_category', 'CREATE INDEX idx_tags_category ON tags(category)')
-            self._ensure_index(cursor, 'image_tags', 'idx_image_tags_image_id', 'CREATE INDEX idx_image_tags_image_id ON image_tags(image_id)')
-            self._ensure_index(cursor, 'image_tags', 'idx_image_tags_tag_id', 'CREATE INDEX idx_image_tags_tag_id ON image_tags(tag_id)')
-            
-            conn.commit()
+            if current_db == 'cardesignspace':
+                print("📡 使用远程数据库，跳过表创建")
+                # 远程数据库已有表结构，只需要创建必要的索引（如果不存在）
+                try:
+                    # 尝试创建一些有用的索引，如果字段不存在会失败，但不影响运行
+                    self._ensure_index(cursor, 'images', 'idx_images_modelId', 'CREATE INDEX idx_images_modelId ON images(modelId)')
+                    self._ensure_index(cursor, 'images', 'idx_images_category', 'CREATE INDEX idx_images_category ON images(category)')
+                    self._ensure_index(cursor, 'images', 'idx_images_uploadDate', 'CREATE INDEX idx_images_uploadDate ON images(uploadDate)')
+                    conn.commit()
+                except Exception as e:
+                    print(f"⚠️ 索引创建跳过: {e}")
+                    conn.rollback()
+            else:
+                # 本地数据库，创建完整的表结构
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS images (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        image_path VARCHAR(500) UNIQUE NOT NULL,
+                        image_id VARCHAR(100) UNIQUE NOT NULL,
+                        source VARCHAR(100) NOT NULL,
+                        brand VARCHAR(100),
+                        model VARCHAR(100),
+                        year VARCHAR(20),
+                        width INT,
+                        height INT,
+                        file_size BIGINT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS tags (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        name VARCHAR(100) UNIQUE NOT NULL,
+                        category VARCHAR(50) NOT NULL,
+                        description TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS image_tags (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        image_id VARCHAR(100) NOT NULL,
+                        tag_id INT NOT NULL,
+                        confidence FLOAT DEFAULT 1.0,
+                        is_manual BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (image_id) REFERENCES images (image_id) ON DELETE CASCADE,
+                        FOREIGN KEY (tag_id) REFERENCES tags (id) ON DELETE CASCADE,
+                        UNIQUE KEY unique_image_tag (image_id, tag_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS annotation_history (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        image_id VARCHAR(100) NOT NULL,
+                        action VARCHAR(50) NOT NULL,
+                        old_tags TEXT,
+                        new_tags TEXT,
+                        user_id VARCHAR(100),
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (image_id) REFERENCES images (image_id) ON DELETE CASCADE
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                ''')
+                
+                # 索引
+                self._ensure_index(cursor, 'images', 'idx_images_brand', 'CREATE INDEX idx_images_brand ON images(brand)')
+                self._ensure_index(cursor, 'images', 'idx_images_source', 'CREATE INDEX idx_images_source ON images(source)')
+                self._ensure_index(cursor, 'tags', 'idx_tags_category', 'CREATE INDEX idx_tags_category ON tags(category)')
+                self._ensure_index(cursor, 'image_tags', 'idx_image_tags_image_id', 'CREATE INDEX idx_image_tags_image_id ON image_tags(image_id)')
+                self._ensure_index(cursor, 'image_tags', 'idx_image_tags_tag_id', 'CREATE INDEX idx_image_tags_tag_id ON image_tags(tag_id)')
+                
+                conn.commit()
         
         print("✅ 数据库初始化完成")
     
@@ -249,45 +266,43 @@ class CarTagDatabase:
             params = []
             
             if filters.get('brand'):
-                conditions.append("i.brand = %s")
+                conditions.append("b.name = %s")
                 params.append(filters['brand'])
             
             if filters.get('angle'):
-                conditions.append("t.name = %s")
+                conditions.append("JSON_SEARCH(i.tags, 'one', %s) IS NOT NULL")
                 params.append(filters['angle'])
             
             if filters.get('style'):
-                conditions.append("t.name = %s")
+                conditions.append("JSON_SEARCH(i.styleTags, 'one', %s) IS NOT NULL")
                 params.append(filters['style'])
             
             if filters.get('year'):
-                conditions.append("i.year = %s")
+                conditions.append("m.year = %s")
                 params.append(filters['year'])
             
             # 构建SQL查询
             if conditions:
                 where_clause = " AND ".join(conditions)
                 sql = f'''
-                    SELECT DISTINCT i.*, 
-                           GROUP_CONCAT(t.name) as tags,
-                           GROUP_CONCAT(t.category) as tag_categories
+                    SELECT DISTINCT i.id as image_id, i.title, i.description, i.url, i.filename,
+                           i.category, i.uploadDate as created_at, i.tags, i.styleTags,
+                           b.name as brand, m.name as model, m.year
                     FROM images i
-                    LEFT JOIN image_tags it ON i.image_id = it.image_id
-                    LEFT JOIN tags t ON it.tag_id = t.id
+                    JOIN models m ON i.modelId = m.id
+                    JOIN brands b ON m.brandId = b.id
                     WHERE {where_clause}
-                    GROUP BY i.image_id
-                    ORDER BY i.created_at DESC
+                    ORDER BY i.uploadDate DESC
                 '''
             else:
                 sql = '''
-                    SELECT i.*, 
-                           GROUP_CONCAT(t.name) as tags,
-                           GROUP_CONCAT(t.category) as tag_categories
+                    SELECT i.id as image_id, i.title, i.description, i.url, i.filename,
+                           i.category, i.uploadDate as created_at, i.tags, i.styleTags,
+                           b.name as brand, m.name as model, m.year
                     FROM images i
-                    LEFT JOIN image_tags it ON i.image_id = it.image_id
-                    LEFT JOIN tags t ON it.tag_id = t.id
-                    GROUP BY i.image_id
-                    ORDER BY i.created_at DESC
+                    JOIN models m ON i.modelId = m.id
+                    JOIN brands b ON m.brandId = b.id
+                    ORDER BY i.uploadDate DESC
                 '''
             
             cursor.execute(sql, params)
@@ -303,32 +318,37 @@ class CarTagDatabase:
             cursor.execute('SELECT COUNT(*) FROM images')
             total_images = cursor.fetchone()['COUNT(*)']
             
-            # 按品牌统计
+            # 按品牌统计 - 通过models表关联brands表
             cursor.execute('''
-                SELECT brand, COUNT(*) as count 
-                FROM images 
-                GROUP BY brand 
+                SELECT b.name as brand, COUNT(i.id) as count 
+                FROM images i
+                JOIN models m ON i.modelId = m.id
+                JOIN brands b ON m.brandId = b.id
+                GROUP BY b.id, b.name 
                 ORDER BY count DESC
             ''')
             brand_results = cursor.fetchall()
             brand_stats = {row['brand']: row['count'] for row in brand_results}
             
-            # 按标签类别统计
+            # 按标签类别统计 - 使用images表的tags字段
             cursor.execute('''
-                SELECT t.category, COUNT(DISTINCT it.image_id) as count
-                FROM tags t
-                JOIN image_tags it ON t.id = it.tag_id
-                GROUP BY t.category
-                ORDER BY count DESC
+                SELECT 'angles' as category, COUNT(*) as count
+                FROM images 
+                WHERE JSON_EXTRACT(tags, '$') IS NOT NULL
+                UNION ALL
+                SELECT 'styles' as category, COUNT(*) as count
+                FROM images 
+                WHERE JSON_EXTRACT(styleTags, '$') IS NOT NULL
             ''')
             tag_results = cursor.fetchall()
             tag_stats = {row['category']: row['count'] for row in tag_results}
             
-            # 按来源统计
+            # 按来源统计 - 使用category字段
             cursor.execute('''
-                SELECT source, COUNT(*) as count 
+                SELECT category as source, COUNT(*) as count 
                 FROM images 
-                GROUP BY source 
+                WHERE category IS NOT NULL AND category != ''
+                GROUP BY category 
                 ORDER BY count DESC
             ''')
             source_results = cursor.fetchall()
